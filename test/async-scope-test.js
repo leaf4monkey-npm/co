@@ -108,14 +108,14 @@ describe('async-scope', () => {
         expect(map).to.not.have.property(eid);
       };
 
-      const assertAsyncScope = () => {
-        expect(asyncHooks.triggerAsyncId()).to.equal(coTid);
-        expect(asyncHooks.executionAsyncId()).to.equal(coEid);
+      const assertAsyncScope = (lastTid = coTid, lastEid = coEid) => {
+        expect(asyncHooks.triggerAsyncId()).to.equal(lastTid);
+        expect(asyncHooks.executionAsyncId()).to.equal(lastEid);
       };
 
       const genFn = function * () {
         for (let i = 0; i <= BATCH_SIZE; i++) {
-          assertAsyncScope();
+          // assertAsyncScope();
           yield addQueue(independent);
         }
       };
@@ -135,8 +135,11 @@ describe('async-scope', () => {
         }
         assertAsyncScope();
         yield * genFn();
+        debug(`${asyncHooks.executionAsyncId()} --> ${asyncHooks.triggerAsyncId()}`);
         assertAsyncScope();
-        // yield genFn();
+        yield genFn();
+        assertAsyncScope();
+        debug(`${asyncHooks.executionAsyncId()} --> ${asyncHooks.triggerAsyncId()}`);
         // assertAsyncScope();
       });
     });

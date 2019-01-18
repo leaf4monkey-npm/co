@@ -60,6 +60,7 @@ co.wrap = function (fn) {
 function co(gen) {
   var ctx = this;
   var args = slice.call(arguments, 1);
+  var asyncResource;
 
   if (typeof gen === 'function') {
     try {
@@ -70,6 +71,7 @@ function co(gen) {
   }
   if (gen && isGenerator(gen)) {
     gen = new CoAsyncResource(gen);
+    asyncResource = gen;
   }
   // we wrap everything in a promise to avoid promise chaining,
   // which leads to memory leak errors.
@@ -123,7 +125,7 @@ function co(gen) {
 
     function next(ret) {
       if (ret.done) return resolve(ret.value);
-      var value = toPromise.call(ctx, ret.value);
+      var value = toPromise.call(ctx, ret.value, asyncResource);
       if (value && isPromise(value)) return value.then(onFulfilled, onRejected);
       return onRejected(new TypeError('You may only yield a function, promise, generator, array, or object, '
         + 'but the following object was passed: "' + String(ret.value) + '"'));
@@ -135,14 +137,19 @@ function co(gen) {
  * Convert a `yield`ed value into a promise.
  *
  * @param {Mixed} obj
+ * @param {CoAsyncResource} asyncResource
  * @return {Promise}
  * @api private
  */
 
-function toPromise(obj) {
+function toPromise(obj, asyncResource) {
   if (!obj) return obj;
   if (isPromise(obj)) return obj;
-  if (isGeneratorFunction(obj) || isGenerator(obj)) return co.call(this, obj);
+  if (isGeneratorFunction(obj) || isGenerator(obj)) {
+    return asyncResource instanceof CoAsyncResource ?
+      asyncResource.runInAsyncScope(co, this, obj) :
+      co.call(this, obj);
+  }
   if ('function' === typeof obj) return thunkToPromise.call(this, obj);
   if (Array.isArray(obj)) return arrayToPromise.call(this, obj);
   if (isObject(obj)) return objectToPromise.call(this, obj);
@@ -247,7 +254,7 @@ function isGenerator(obj) {
  * @return {Boolean}
  * @api private
  */
- 
+
 function isGeneratorFunction(obj) {
   var constructor = obj.constructor;
   if (!constructor) return false;
