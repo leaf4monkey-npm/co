@@ -1,3 +1,20 @@
+var asyncHooks = require('async_hooks');
+
+var AsyncResource = asyncHooks.AsyncResource;
+class CoAsyncResource extends AsyncResource {
+  constructor (gen, name) {
+    super(name || 'CO_ASYNC');
+    this.gen = gen;
+  }
+
+  next (res) {
+    return this.runInAsyncScope(this.gen.next, this.gen, res);
+  }
+
+  throw (err) {
+    return this.runInAsyncScope(this.gen.throw, this.gen, err);
+  }
+}
 
 /**
  * slice() reference.
@@ -44,11 +61,20 @@ function co(gen) {
   var ctx = this;
   var args = slice.call(arguments, 1);
 
+  if (typeof gen === 'function') {
+    try {
+      gen = gen.apply(ctx, args);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+  if (gen && isGenerator(gen)) {
+    gen = new CoAsyncResource(gen);
+  }
   // we wrap everything in a promise to avoid promise chaining,
   // which leads to memory leak errors.
   // see https://github.com/tj/co/issues/180
   return new Promise(function(resolve, reject) {
-    if (typeof gen === 'function') gen = gen.apply(ctx, args);
     if (!gen || typeof gen.next !== 'function') return resolve(gen);
 
     onFulfilled();
@@ -117,7 +143,7 @@ function toPromise(obj) {
   if (!obj) return obj;
   if (isPromise(obj)) return obj;
   if (isGeneratorFunction(obj) || isGenerator(obj)) return co.call(this, obj);
-  if ('function' == typeof obj) return thunkToPromise.call(this, obj);
+  if ('function' === typeof obj) return thunkToPromise.call(this, obj);
   if (Array.isArray(obj)) return arrayToPromise.call(this, obj);
   if (isObject(obj)) return objectToPromise.call(this, obj);
   return obj;
@@ -196,7 +222,7 @@ function objectToPromise(obj){
  */
 
 function isPromise(obj) {
-  return 'function' == typeof obj.then;
+  return 'function' === typeof obj.then;
 }
 
 /**
@@ -208,7 +234,10 @@ function isPromise(obj) {
  */
 
 function isGenerator(obj) {
-  return 'function' == typeof obj.next && 'function' == typeof obj.throw;
+  if (obj instanceof CoAsyncResource) {
+    return false;
+  }
+  return 'function' === typeof obj.next && 'function' === typeof obj.throw;
 }
 
 /**
@@ -235,5 +264,5 @@ function isGeneratorFunction(obj) {
  */
 
 function isObject(val) {
-  return Object == val.constructor;
+  return Object === val.constructor;
 }
