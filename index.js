@@ -133,11 +133,17 @@ function co(gen) {
   });
 }
 
+function runGenInAsyncScope (asyncResource, fn, ctx, ...args) {
+  return asyncResource instanceof CoAsyncResource ?
+    asyncResource.runInAsyncScope(fn, ctx, ...args) :
+    fn.apply(ctx, args);
+}
+
 /**
  * Convert a `yield`ed value into a promise.
  *
  * @param {Mixed} obj
- * @param {CoAsyncResource} asyncResource
+ * @param {?CoAsyncResource=} asyncResource
  * @return {Promise}
  * @api private
  */
@@ -146,28 +152,27 @@ function toPromise(obj, asyncResource) {
   if (!obj) return obj;
   if (isPromise(obj)) return obj;
   if (isGeneratorFunction(obj) || isGenerator(obj)) {
-    return asyncResource instanceof CoAsyncResource ?
-      asyncResource.runInAsyncScope(co, this, obj) :
-      co.call(this, obj);
+    return runGenInAsyncScope(asyncResource, co, this, obj);
   }
-  if ('function' === typeof obj) return thunkToPromise.call(this, obj);
-  if (Array.isArray(obj)) return arrayToPromise.call(this, obj);
-  if (isObject(obj)) return objectToPromise.call(this, obj);
+  if ('function' === typeof obj) return thunkToPromise.call(this, obj, asyncResource);
+  if (Array.isArray(obj)) return arrayToPromise.call(this, obj, asyncResource);
+  if (isObject(obj)) return objectToPromise.call(this, obj, asyncResource);
   return obj;
 }
 
 /**
  * Convert a thunk to a promise.
  *
- * @param {Function}
+ * @param {Function} fn
+ * @param {?CoAsyncResource=} asyncResource
  * @return {Promise}
  * @api private
  */
 
-function thunkToPromise(fn) {
+function thunkToPromise(fn, asyncResource) {
   var ctx = this;
   return new Promise(function (resolve, reject) {
-    fn.call(ctx, function (err, res) {
+    runGenInAsyncScope(asyncResource, fn, ctx, function (err, res) {
       if (err) return reject(err);
       if (arguments.length > 2) res = slice.call(arguments, 1);
       resolve(res);
@@ -180,12 +185,13 @@ function thunkToPromise(fn) {
  * Uses `Promise.all()` internally.
  *
  * @param {Array} obj
+ * @param {?CoAsyncResource=} asyncResource
  * @return {Promise}
  * @api private
  */
 
-function arrayToPromise(obj) {
-  return Promise.all(obj.map(toPromise, this));
+function arrayToPromise(obj, asyncResource) {
+  return Promise.all(obj.map(function (o) {return toPromise(o, asyncResource)}, this));
 }
 
 /**
@@ -193,17 +199,18 @@ function arrayToPromise(obj) {
  * Uses `Promise.all()` internally.
  *
  * @param {Object} obj
+ * @param {?CoAsyncResource=} asyncResource
  * @return {Promise}
  * @api private
  */
 
-function objectToPromise(obj){
+function objectToPromise(obj, asyncResource){
   var results = new obj.constructor();
   var keys = Object.keys(obj);
   var promises = [];
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    var promise = toPromise.call(this, obj[key]);
+    var promise = toPromise.call(this, obj[key], asyncResource);
     if (promise && isPromise(promise)) defer(promise, key);
     else results[key] = obj[key];
   }
