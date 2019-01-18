@@ -10,11 +10,28 @@ function debug(...args) {
 }
 
 let map = {};
+let root = null;
 const hooks = asyncHooks.createHook({
   init (asyncId, type, triggerId) {
-    map[asyncId] = triggerId;
+    if (!root) {
+      root = asyncId;
+      map[root] = root;
+    } else {
+      map[asyncId] = triggerId;
+    }
   }
 });
+
+const asyncIdMatchRoot = id => {
+  let rt = id;
+  const path = [id];
+  while (![root, undefined].includes(rt)) {
+    rt = map[rt];
+    path.push(rt);
+  }
+  debug('path:', path.join('-->'));
+  return rt === root;
+};
 
 let BATCH_SIZE = 3;
 const simpleQueue = [];
@@ -40,6 +57,7 @@ describe('async-scope', () => {
   after(() => clearInterval(timer));
   beforeEach(() => {
     map = {};
+    root = null;
     hooks.enable();
   });
   afterEach(() => {
@@ -92,6 +110,7 @@ describe('async-scope', () => {
       const startEid = asyncHooks.executionAsyncId();
       let coEid;
       let coTid;
+      let genCalledTimes = 0;
 
       const fn = () => {
         const eid = asyncHooks.executionAsyncId();
@@ -105,7 +124,7 @@ describe('async-scope', () => {
         // const tid = asyncHooks.triggerAsyncId();
         expect(eid).to.be.a('Number');
         // expect(tid).to.be.an('Number').that.equal(coEid);
-        expect(map).to.not.have.property(eid);
+        // expect(map).to.not.have.property(eid);
       };
 
       const assertAsyncScope = (lastTid = coTid, lastEid = coEid) => {
@@ -114,9 +133,14 @@ describe('async-scope', () => {
       };
 
       const genFn = function * () {
+        genCalledTimes++;
+        const eid = asyncHooks.executionAsyncId();
+        expect(asyncIdMatchRoot(eid)).to.equal(true);
         for (let i = 0; i <= BATCH_SIZE; i++) {
           // assertAsyncScope();
           yield addQueue(independent);
+          const eid = asyncHooks.executionAsyncId();
+          expect(asyncIdMatchRoot(eid)).to.equal(true);
         }
       };
 
@@ -124,6 +148,8 @@ describe('async-scope', () => {
         coEid = asyncHooks.executionAsyncId();
         coTid = asyncHooks.triggerAsyncId();
         expect(coTid).to.equal(startEid);
+        let i = 0;
+        expect(asyncIdMatchRoot(coEid)).to.equal(true);
         yield [
           addQueue(fn),
           addQueue(fn),
@@ -134,13 +160,31 @@ describe('async-scope', () => {
           yield addQueue(independent);
         }
         assertAsyncScope();
+
         yield * genFn();
-        debug(`${asyncHooks.executionAsyncId()} --> ${asyncHooks.triggerAsyncId()}`);
+        i++;
         assertAsyncScope();
+
         yield genFn();
+        i++;
         assertAsyncScope();
-        debug(`${asyncHooks.executionAsyncId()} --> ${asyncHooks.triggerAsyncId()}`);
-        // assertAsyncScope();
+
+        yield [
+          genFn(),
+          genFn,
+          genFn()
+        ];
+        i += 3;
+        assertAsyncScope();
+
+        yield genFn;
+        i++;
+        assertAsyncScope();
+
+        yield {key1: genFn, key2: genFn()};
+        i += 2;
+        assertAsyncScope();
+        expect(genCalledTimes).to.equal(i);
       });
     });
   });
