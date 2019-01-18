@@ -1,6 +1,6 @@
 {
   "name": "async-hooked-co",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "generator async control flow goodness, with `async_hooks` support.",
   "keywords": [
     "async",

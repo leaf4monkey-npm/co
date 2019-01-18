@@ -15,21 +15,28 @@ const hooks = asyncHooks.createHook({
   init (asyncId, type, triggerId) {
     if (!root) {
       root = asyncId;
-      map[root] = root;
+      map[root] = triggerId;
     } else {
       map[asyncId] = triggerId;
     }
   }
 });
 
+let treeCache = {};
 const asyncIdMatchRoot = id => {
   let rt = id;
   const path = [id];
+  if (treeCache.hasOwnProperty(id)) {
+    const list = treeCache[id];
+    rt = list[list.length - 1];
+    return rt === root;
+  }
   while (![root, undefined].includes(rt)) {
     rt = map[rt];
     path.push(rt);
   }
   debug('path:', path.join('-->'));
+  treeCache[id] = path;
   return rt === root;
 };
 
@@ -57,6 +64,7 @@ describe('async-scope', () => {
   after(() => clearInterval(timer));
   beforeEach(() => {
     map = {};
+    treeCache = {};
     root = null;
     hooks.enable();
   });
