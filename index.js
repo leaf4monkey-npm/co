@@ -1,5 +1,11 @@
 var asyncHooks = require('async_hooks');
 
+/**
+ * slice() reference.
+ */
+
+var slice = Array.prototype.slice;
+
 var AsyncResource = asyncHooks.AsyncResource;
 class CoAsyncResource extends AsyncResource {
   constructor (gen, name) {
@@ -14,13 +20,22 @@ class CoAsyncResource extends AsyncResource {
   throw (err) {
     return this.runInAsyncScope(this.gen.throw, this.gen, err);
   }
+
+  runInAsyncScope (fn, ctx, ...args) {
+    if (super.runInAsyncScope) {
+      return super.runInAsyncScope(fn, ctx, ...args);
+    }
+
+    try {
+      this.emitBefore();
+      return fn.apply(ctx, arguments);
+    } catch (error) {
+      throw error;
+    } finally {
+      this.emitAfter();
+    }
+  }
 }
-
-/**
- * slice() reference.
- */
-
-var slice = Array.prototype.slice;
 
 /**
  * Expose `co`.
